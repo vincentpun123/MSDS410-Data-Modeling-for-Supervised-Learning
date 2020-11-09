@@ -1,0 +1,458 @@
+---
+title: "Pun_410_ComputationalAssignment4_LogisticRegression"
+author: "Vincent Pun"
+date: "11/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r Libraries}
+library(knitr)
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(lessR)
+```
+
+1. 
+For the 2x2 table, determine the odds and the probabilities of texting while driving among males and females.  Then compute the odds ratio of texting while driving that compares males to females.  (5 points)
+
+Odds of an event, o(E)=p(E)/p(E')=p(YES)/p(NO)
+Odds Ratio for A and B = o(A)/o(B)
+
+REFERENCE: logistic regression intro.mp4
+
+```{r Q1}
+#Summary Dataframe
+knitr::kable(data.frame(
+  Model = c('YES','NO', 'P(Yes)','P(No)','Odds(Yes)','Odds Ratio'),
+  MALE = c(30,10.0,0.75,.25,3,.5294),
+  FEMALE = c(34.0,6.0,.85,.15,5.667,'')
+))
+
+#Odds and probabilities of texting while driving AMONG males AND females
+#Odds ratio of texting while driving that COMPARES males TO females 
+
+```
+
+2.   Download the data file RELIGION.CSV and import it into R.  
+
+Use R and your EDA skills to gain a basic understanding of this dataset.   
+
+Please note, there is a variable labeled RELSCHOL.  
+This variable indicates if a survey respondent attends a religiously affiliated private secondary school (1) or not (0).   
+
+Use this dataset to address the following questions:  (10 points)
+```{r RELIGION.CSV}
+mydata <- read_csv("RELIGION.csv")
+attach(mydata)
+head(mydata)
+
+by(mydata, mydata$RELSCHOL, summary)
+```
+```{r - Missing Values Summary}
+
+#check for any missing values in the data
+colSums(is.na(mydata))
+
+#create table to count null values and percentage against overall population 
+
+nullcount_df <- sapply(mydata,function(y) sum(length(which(is.na(y)))))
+nullcount_df <- data.frame(sort(nullcount_df[nullcount_df>0], decreasing=TRUE))
+
+colnames(nullcount_df)[1] <- "NullCount"
+nullcount_df$PctNull <- round(nullcount_df$NullCount / (nrow(mydata)),3)
+
+nullcount_df
+
+```
+```{r}
+unique(mydata$RELSCHOL)
+```
+
+a.  	Compute the overall odds and probability of attending a religious school, assuming this data is from a random sample.
+```{r Q2A - Odds/Prob RELSCHOL}
+#RELSCHOL
+  #1 = Religious Secondary School
+  #0 = Non-religious Secondary School
+
+?prop.table
+#https://stat.ethz.ch/R-manual/R-patched/library/base/html/table.html
+
+#proportions
+prop.table(table(mydata$RELSCHOL, dnn = "RELSCHOL"))
+paste('probability of attending a religious school = 0.128')
+paste('probability of attending a non-religious school = 0.872')
+
+oddsreligious <- round(.1278/(1-.1278),3)
+paste('odds of attending a religious school are: ',oddsreligious)
+```
+
+b.	Cross-tabulate RELSCHOL with RACE (coded:  0=non-white, 1=white).  
+
+What are the probabilities that non-white students and white students attend religious schools?  
+
+What are the odds that white students and non-white students attend religious schools?  
+
+What is the odds ratio that compares white and non-white students?
+
+Odds of an event, o(E)=p(E)/p(E')=p(YES)/p(NO)
+Odds Ratio for A and B = o(A)/o(B)
+
+REFERENCE: logistic regression intro.mp4
+```{r Q2B}
+#RELSCHOL
+  #1 = Religious Secondary School
+  #0 = Non-religious Secondary School
+
+#RACE
+  #1 = White
+  #0 = Non-white
+
+table(mydata$RELSCHOL, mydata$RACE, dnn = c("RELSCHOL", "RACE"))
+
+probreligious.nonwhite <- round(26/(26+76),3)
+probreligious.white <- round(54/(54+470),3)
+
+probnonreligious.nonwhite <- 1-probreligious.nonwhite
+probnonreligious.white <- 1-probreligious.white
+
+#odds white and nonwhite attend religious? 
+odds.rel.white <- round(probreligious.white/probnonreligious.white,3)
+odds.rel.nonwhite <- round(probreligious.nonwhite/probnonreligious.nonwhite,3)
+
+#odds ratio white/nonwhite 
+oddsratio.2b <- round(odds.rel.white/odds.rel.nonwhite,3)
+
+paste('Probability non-white students attend religious schools = ',probreligious.nonwhite)
+paste('Probability white students attend religious schools = ',probreligious.white)
+
+paste('Odds white students attend religious schools = ',odds.rel.white)
+paste('Odds non-white students attend religious schools = ',odds.rel.nonwhite)
+
+paste('Odds ratio that compares white and non-white students = ',oddsratio.2b)
+
+```
+
+c.	Plot RELSCHOL (Y) by INCOME as a scatterplot.  
+
+The INCOME variable is actually an ordinal variable that is associated with income brackets.  
+This is an old dataset, so for example, INCOME=4  $20,000-$29,999.   
+Is there a value of INCOME that seems to separate or discriminate between those attending religious schools and those that don’t?   
+```{r Q2C income relschol}
+ggplot(mydata, aes(INCOME, RELSCHOL))+
+  geom_jitter(width = 0.1) + theme_light()
+
+paste('By plotting RELSCHOL by INCOME, it appears that there is no indication of discrimination between those attending religious school and those that do not. There are no discriminating points between the two groups 0 and 1, so INCOME alone may not be a powerful in predicting RELSCHOL determination.')
+```
+
+
+Create a variable that dichotomizes INCOME based on this value you observed.  
+
+Call this new variable D_INCOME.  
+
+Cross-tabulate RELSCHOL with D_INCOME.  
+
+What are the probabilities that low income students and higher students attend religious schools?  
+What are the odds that lower income students and higher income students attend religious schools?  
+What is the odds ratio that compares lower and higher income students?  
+```{r Q2C Continued}
+mydata$D_INCOME <- ifelse(mydata$INCOME < 5,0,1)
+table(mydata$RELSCHOL, mydata$D_INCOME, dnn = c('RELSCHOL','D_INCOME'))
+
+#RELSCHOL
+  #1 = Religious Secondary School
+  #0 = Non-religious Secondary School
+
+#D_INCOME
+  #1 = INCOME >= 5(HIGHER INCOME)
+  #0 = INCOME < 5(LOWER INCOME)
+
+probreligious.lowincome <- round(19/(19+232),3)
+probreligious.highincome <- round(57/(57+282),3)
+
+probnonreligious.lowincome <- 1-probreligious.lowincome
+probnonreligious.highincome <- 1-probreligious.highincome
+
+#odds white and nonwhite attend religious? 
+odds.rel.low <- round(probreligious.lowincome/probnonreligious.lowincome,3)
+odds.rel.high <- round(probreligious.highincome/probnonreligious.highincome,3)
+
+#odds ratio white/nonwhite 
+oddsratio.2c <- round(odds.rel.low/odds.rel.high,3)
+
+paste('Probability low income students attend religious schools = ',probreligious.lowincome)
+paste('Probability high income students attend religious schools = ',probreligious.highincome)
+
+paste('Odds low income students attend religious schools = ',odds.rel.low)
+paste('Odds high income students attend religious schools = ',odds.rel.high)
+
+paste('Odds ratio that compares low income students to high income students = ',oddsratio.2c,'suggests that low income students are less likely to attend religious schools')
+
+```
+
+d.	Plot RELSCHOL (Y) by ATTEND as a scatterplot.  
+
+The ATTEND variable is the number of times the survey respondent attends a service during a month.  
+
+Cross-tabulate RELSCHOL with ATTEND.  Are the proportion profiles the same for those attending religious school versus not, across the values of the ATTEND variable?  Is there a value of ATTEND that seems to separate or discriminate between those attending religious schools and those that don’t?   Save this value for later.
+```{r Q2D - RELSCHOL and ATTEND}
+#https://ggplot2.tidyverse.org/reference/position_jitter.html
+ggplot(mydata, aes(ATTEND, RELSCHOL))+
+  geom_jitter(width = 0.05)+ 
+  theme_light()
+
+prop.table(table(mydata$RELSCHOL, mydata$ATTEND, dnn = c('RELSCHOL','ATTEND')),2)
+
+paste('It appears that the proportion profiles across value of Attend variable are discriminating. For example, there are no students that attend religious schools who attend service once a month. The proportion profile changes significantly at ATTEND = 5 as well.')
+
+mydata$D_ATTEND <- ifelse(mydata$ATTEND > 4,1,0)
+#people who attend service more than 4 times = 1
+#people who attend service 4 times or less = 0 
+
+
+```
+```{r Boxplot Attend Relschol}
+BoxPlot(ATTEND, data=mydata)
+BoxPlot(ATTEND, by1=RELSCHOL, data=mydata)
+#discriminative points chracteristic/quality, looks like vast majority of religious school attendees attend service five times per month (hence narrow boxplot), high propensity of attending service 5 times.
+```
+
+3.   First, fit a logistic model to predict RELSCHOL (Y) using only the RACE (X) variable.  Call this Model 1.   Report the logistic regression model and interpret the parameter estimates for Model 1.  Report the AIC and BIC values for Model 1.    (3 points)
+```{r Q3 Model 1 - RELSCHOL ~ RACE}
+model.1 <- glm(RELSCHOL ~ RACE, data=mydata, family=binomial)
+summary(model.1)
+
+logit.model.1 <- -1.0726 + -1.0911 * mydata$RACE
+oddsratio.model.1 <- exp(logit.model.1)
+pi.model.1 <- oddsratio.model.1/(1+oddsratio.model.1)
+
+
+model.1.AIC <- round(model.1$aic,3)
+model.1.BIC <- round(BIC(model.1),3)
+
+paste('model.1.AIC = ',model.1.AIC)
+paste('model.1.BIC = ',model.1.BIC)
+
+```
+
+
+4.  Next, fit a logistic model to predict RELSCHOL (Y) using only the INCOME(X) variable.   Call this Model 2.   For Model 2, do the following:  (6 points)
+```{r Q4 model.2 RELSCHOL ~ INCOME}
+model.2 <- glm(RELSCHOL ~ INCOME, data=mydata, family=binomial)
+model.2
+```
+
+a.	Report the logistic regression model and interpret the parameter estimates for Model 2.  Report the AIC and BIC values for Model 2.   How do these compare to Model 1?
+```{r Q4A}
+summary(model.2)
+
+model.2.AIC <- round(model.2$aic,3)
+model.2.BIC <- round(BIC(model.2),3)
+
+paste('model.2.AIC = ',model.2.AIC)
+paste('model.2.BIC = ',model.2.BIC)
+
+paste('Model 2 has lower values of AIC and BIC compared to that in Model 1. This suggests that modeling RELSCHOL using INCOME is preferred over RELSCHOL in relation to RACE.')
+```
+
+b)  	Use the logit predictive equation for Model 2 to compute PI for each record.   
+Plot PI (Y) by INCOME(X).   
+At what value of X, does the value of PI exceed 0.50?   
+How does this value compare to your visual estimate from problem 2c)?   
+```{r Q4B}
+logit.model.2 <- -2.8211 + 0.16228 * mydata$INCOME
+oddsratio.model.2 <- exp(logit.model.2)
+pi.model.2 <- oddsratio.model.2/(1+oddsratio.model.2)
+
+plot(mydata$INCOME, pi.model.2, ylim = c(0,0.5), main = 'PI (Y) BY INCOME (X)')
+
+paste('At no value of X does the value of PI exceed 0.50. This makes sense because it is more likely that students attend non-religious schools across all income levels. This visual aligns simiarly with problem 2c, as it shows a steady increase in propensity of attending a religious school as income rises. In 2c, we see that the discrimination between religious and nonreligious schools decreases, but it is still very likely that one does not attend a religious school.')
+```
+
+5.  Next, fit a logistic model to predict RELSCHOL (Y) using only the ATTEND(X) variable.   Call this Model 3.   For Model 3, do the following:  (6 points)
+```{r Q5 model.3 ATTEND}
+
+model.3 <- glm(RELSCHOL ~ ATTEND, data = mydata, family = binomial)
+model.3
+
+```
+
+a.	Report the logistic regression model and interpret the parameter estimates for Model 3.  Report the AIC and BIC values for Model 3.   How do these compare to Models 1 and 2?
+```{r Q5A}
+
+model.3.AIC <- round(model.3$aic,3)
+model.3.BIC <- round(BIC(model.3),3)
+
+paste('model.3.AIC = ',model.3.AIC)
+paste('model.3.BIC = ',model.3.BIC)
+
+paste('Model 3 has the highest AIC and BIC out of all models so far. This indicaets that ATTEND is not as powerful of a predictor as INCOME or RACE.')
+```
+
+b)  	Use the logit predictive equation for Model 3 to compute PI for each record.   Plot PI (Y) by attend(X).   At what value of X, does the value of PI exceed 0.50?   How does this value compare to your visual estimate from problem 2d)?   
+```{r Q5B}
+
+logit.model.3 <- -2.9727 + 0.2269 * mydata$ATTEND
+oddsratio.model.3 <- exp(logit.model.3)
+pi.model.3 <- oddsratio.model.3/(1+oddsratio.model.3)
+
+plot(mydata$ATTEND, pi.model.3, ylim = c(0,.3), main = 'PI (Y) BY ATTEND (X)')
+
+paste('At no value of X does the value of PI exceed 0.50. This plot aligns well with the estimate from problem 2D, as it appears that the probability of attending religious schools for students who attend service five to six times per month is between 15 to 20%. This is similar to the proportion profile in 2D, where 17% of ATTEND = 5 students attend religious schools.')
+
+```
+
+6.  Finally, fit a logistic model to predict RELSCHOL (Y) using RACE, INCOME and ATTEND as explanatory (X) variables.  Please consider INCOME and ATTEND to be continuous variables.  Call this Model 4.   For Model 4, do the following:  (9 points)
+```{r Q6 Multiple Logistic Regression}
+model.4 <- glm(RELSCHOL~RACE + INCOME + ATTEND, data=mydata, family = binomial)
+model.4
+
+```
+
+a. 	Report the logistic regression model and interpret the parameter estimates for Model 4.  Report the AIC and BIC values for Model 4.   How does this model compare to Modesl 1, 2 and 3?
+
+Betas(b1) = change in the log of odds ratio for every 1 unit change in X, all other X's constant
+
+exp(beta) - 1 = percentage change in odds ratio [pi/(1-pi)] for every 1 unit increase in X, holding all other X's constant
+
+REFERENCE: Interpreting Model Coefficients, Summary of Key LR Components and their Interpretations
+```{r Q6A Model 4 Interpretation}
+
+#PERCENT CHANGE IN ODDS RATIO FOR EVERY 1 UNIT CHANGE IN X 
+percentchange.race <- exp(-1.2893) - 1
+percentchange.income <- exp(.2007) - 1
+percentchange.attend <- exp(0.3316) - 1
+
+#RACE
+  #1 = White
+  #0 = Non-white
+paste(percentchange.race, 'percent change in odds ratio for every 1 unit change in RACE holding other variables constant. This suggests white students have a lower chance of attending religious schools.')
+
+#INCOME (continuous)
+paste(percentchange.income, 'percent change in odds ratio for every 1 unit change in INCOME holding other variables constant. This suggests that higher income families may send students to religious schools.')
+
+#ATTEND (continuous)
+paste(percentchange.attend, 'percent change in odds ratio for every 1 unit change in ATTEND holding other variables constant. This suggests that students who attend service more each month have greater chances of attending religious schools.')
+
+model.4.AIC <- model.4$aic
+model.4.BIC <- BIC(model.4)
+
+paste('model.4.AIC = ',model.4.AIC)
+paste('model.4.BIC = ',model.4.BIC)
+
+paste('Model 4 has the lowest AIC and BIC out of all models so far. This indicaets that it may be the best predictive model for predicting RELSCHOL affiliation.')
+
+```
+
+b.	For those who attend religious service 5 days per month (attend=5) and have a family income of $20-$29,000 (INCOME=4), what are the predicted odds of attending a religious school for white and non-white students?
+```{r Q6B Model 4 Scenario Testing}
+
+# Odds White Student
+logit.model.4.WHITE <- -3.5831 - 1.2893 * 1 + 0.2007 * 4 + 0.3316 * 5
+oddsratio.model4.WHITE <- round(exp(logit.model.4.WHITE), digits = 3)
+
+# Odds Non-white Student
+logit.model.4.NONWHITE <- -3.5831 - 1.2893 * 0 + 0.2007 * 4 + 0.3316 * 5
+oddsratio.model4.NONWHITE <- round(exp(logit.model.4.NONWHITE), digits = 3)
+
+paste('predicted odds of attending a religious school for white = ',oddsratio.model4.WHITE)
+paste('predicted odds of attending a religious school for non-white = ',oddsratio.model4.NONWHITE)
+```
+
+c.	What is the adjusted odds ratio for race?  Interpret this odds ratio.
+```{r Q6C Adjusted Odds Ratio for RACE}
+adjustedoddsratio.RACE <- round(oddsratio.model4.NONWHITE/oddsratio.model4.WHITE,3)
+paste('non-white students are ',adjustedoddsratio.RACE,'times more likely to attend religious schools when looking at RACE alone, with other variables held constant (INCOME = 4, ATTEND = 5 for all instances).')
+```
+
+7.   For Models 1, 2 and 3, use the logit models to make predictions for RELSCHOL.   Note, you will have to calculate the estimated logit and then convert it into PI_estimates for each module.  The classification rule is:    If PI < 0.50, predict 0; otherwise predict 1 for RELSCHOL.    Obtain a cross-tabulation of RELSCHOL with the predicted values for each model.   Compare the correct classification rates for each of the three models.   (6 points)
+
+EXAMPLE:
+logit1<-1.81852 - 0.06647*mydata$Age
+oddsratio1<-exp(logit1)
+pi1<-exp(logit1)/(1 + exp(logit1))
+outcome1<-ifelse(pi1 > 0.5,1,0)
+
+FROM EARLIER: 
+pi.model.1
+pi.model.2
+pi.model.3
+
+```{r Q7}
+
+
+outcome1 <- ifelse(pi.model.1 > 0.5,1,0)
+outcome2 <- ifelse(pi.model.2 > 0.5,1,0)
+outcome3 <- ifelse(pi.model.3 > 0.5,1,0)
+#RELSCHOL w predicted values for each model 
+#compare classification rates 
+
+
+table(mydata$RELSCHOL)
+
+#RELSCHOL ~ RACE
+table(mydata$RELSCHOL, outcome1, dnn = c('RELSCHOL','PREDICT Model 1'))
+paste('Model 1 does not predict any students attending a religioius school (all predicted as 0 based on 0.5 threshold). Model 1 is accurate 87.22% of the time because it only guesses 0, which is correct for most cases.')
+
+#RELSCHOL ~ INCOME
+table(mydata$RELSCHOL, outcome2, dnn = c('RELSCHOL','PREDICT Model 2'))
+paste('Model 2 does not predict any students attending a religioius school (all predicted as 0 based on 0.5 threshold). Model 2 is correct 87.11% of the time. It cannot make predictions on some records since this dataset contains null values.')
+
+#RELSCHOL ~ ATTEND
+table(mydata$RELSCHOL, outcome3, dnn = c('RELSCHOL','PREDICT Model 3'))
+paste('Model 3 does not predict any students attending a religioius school (all predicted as 0 based on 0.5 threshold). Model 3 is accurate 87.22% of the time because it only guesses 0, which is correct for most cases.')
+
+
+
+```
+
+8.    In plain English, what do you conclude about the relationship between a student’s race/ethnicity, religious service attendance, family income and attending a religious school?  (5 points) 
+```{r Q8 }
+paste("Based on the predictive novels and exploratory analysis conducted above, we can conclude that a student's race, religious service attendance and family income are not powerful predictive variables of whether they attend religious schools. While it did appear that there were noticeable patterns of service attendance and religious school enrollment, the probabilities of attending religious schools across the dataset were low. Given that a small allocation of the sample population attendned religious schools, the PI criteria could have been lowered to get more predictive accuracy.")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,1294 @@
+---
+title: "MSDS 410 - Assignment 3"
+author: "Vincent Pun"
+date: "10/31/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+***INTRODUCTION***
+The perception of an ideal house is very different from one person to another. In addition to
+accounting for subjectivity and preference, houses come in all shapes and sizes. In result, one
+can come up with many ways to describe a home. The purpose of the “Ames Housing Competition” Kaggle competition is to explore how eighty-two explanatory
+variables can be used to predict housing prices in Ames, Iowa. In this analysis, OLS (“Linear”) Regression will be used to predict housing prices in the ames_test_sfam dataset using the ames_train data. 
+
+***From AmesHousingDataDocumentation.txt***
+STORY BEHIND THE DATA:
+This data set was constructed for the purpose of an end of semester project for an undergraduate regression course. The original data (obtained directly from the Ames Assessorís Office) is used for tax assessment purposes but lends itself directly to the prediction of home selling prices. The type of information contained in the data is similar to what a typical home buyer would want to know before making a purchase and students should find most variables straightforward and understandable.
+
+
+```{r train test data}
+train <- read.csv('AMES_TRAIN.csv',sep=",")
+test <- read.csv('AMES_TEST_SFAM.csv',sep=",")
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r Preview Data}
+head(train,n=5)
+head(test,n=5)
+
+```
+
+The Train Data Consists of 2039 observations and has 81 variables. 
+
+The Test Data Consists of 726 observations and has 82 variables. The 82nd variable is p_saleprice, which is not found in the Train data. 
+
+***STEP ONE - A Data Survey and Defining the Sample***
+
+```{r}
+summary(train)
+```
+
+SPECIAL NOTES:
+There are 5 observations that an instructor may wish to remove from the data set before giving it to students (a plot of SALE PRICE versus GR LIV AREA will indicate them quickly).
+ 
+Three of them are true outliers (Partial Sales that likely donít represent actual market values) and two of them are simply unusual sales (very large houses priced relatively appropriately). 
+
+I would recommend removing any houses with more than 4000 square feet from the data set (which eliminates these 5 unusual observations) before assigning it to students.
+
+```{r SPECIAL NOTES (From Documentation)}
+df_special <- train[ , c("LotFrontage","SalePrice")]
+
+plot(df_special$LotFrontage, df_special$SalePrice, main = "Scatter", col = "red",
+     cex = 1.0, pch = 16,  xlab = "LotFrontage", ylab = "SalePrice")
+```
+
+```{r Remove Outliers - train$GrLivArea}
+#Recommend removing houses with more than 4000 square feet from data set 
+
+train <- subset(train,train$GrLivArea < 4000)
+```
+
+***Define The Sample***
+Given that the test data consists of single family homes ONLY, we should define the population data of interest as single-family homes. We see that the Train dataset has 1699 instances of 1Fam in the BldgType feature, which is a large portion of the provided data. 
+
+DROP CONDITIONS:
+Therefore, we will want to exclude (drop conditions) rows where Bldg Type equals the following: 2FmCon, Duplx, TwnhsE, and TwnhsI (not equal to 1Fam).
+
+ASSUMPTION IS TO DROP, BUT TEST DATA CONTIANS THESE INSTANCES, SO WILL NOT DROP: 
+While I had assumed that non residential Zoning and Abnormal SaleCondition were to be dropped for this exercise's predictions, the test set shows that there are in fact 1Fam residences that exhibit alternative zoning and sale condition criterias. 
+
+Zoning
+SaleCondition 
+
+OUTLIERS: 
+Check for outliers in Train df's SalePrice (i.e. zero, negative, or very large  numbers)
+
+NULL/MISSING VALUES:
+We will replace null values with median values for numeric veriables.
+
+```{r Train - Drop Conditions - 1Fam}
+
+#train data (1Fam ONLY)
+#1699 observations
+
+train_1fam <- subset(train, BldgType == "1Fam")
+tail(train_1fam)
+
+```
+
+We want to see the skewness and kurtosis of train_1fam.
+
+```{r SalePrice - Skewness and Kurtosis}
+library(moments)
+
+#original train skewness and kurtosis
+skewness <- skewness(train_1fam$SalePrice)
+skewness
+
+kurtosis <-  kurtosis(train_1fam$SalePrice)
+kurtosis
+```
+
+It looks like SalePrice contains some outliers that is causing kurtosis to equal 8 (high). It appears that the upper quantile is the reason behind this skewed data, so we will only keep rows in the dataframe that have values within 1.5*IQR of Q1 and Q3. 
+
+```{r SalePrice - Remove Outliers}
+#parameters
+par(mfrow = c(1,2))
+
+#boxplot
+b <- boxplot(train_1fam$SalePrice,
+             main = "Boxplot of SalePrice")
+b
+
+Q1 <- quantile(train_1fam$SalePrice, .25)
+Q3 <- quantile(train_1fam$SalePrice, .75)
+IQR <- IQR(train_1fam$SalePrice)
+
+#only keep rows in dataframe that have values within 1.5*IQR of Q1 and Q3
+train_1fam_no_outliers <- subset(train_1fam, train_1fam$SalePrice > (Q1 - 1.5*IQR) & train_1fam$SalePrice< (Q3 + 1.5*IQR))
+
+#view row and column count of new data frame
+dim(train_1fam_no_outliers) 
+
+#boxplot without outliers 
+b_no_outliers <- boxplot(train_1fam_no_outliers$SalePrice,
+                         main = "Boxplot of SalePrice (1.5*IQR Q1 Q3)")
+b_no_outliers
+
+skewness2 <- skewness(train_1fam_no_outliers$SalePrice)
+skewness2
+
+kurtosis2 <-  kurtosis(train_1fam_no_outliers$SalePrice)
+kurtosis2
+```
+
+After removing the outliers we see that skewness for SalePrice is now 0.71, and kurtosis equals 3. This is a large improvement, and will facilitate the linear model's ability to predict house sales prices. 
+
+```{r Visualize SalePrice - Remove Outliers}
+#parameters
+par(mfrow = c(2,2))
+
+#histogram
+hist(train_1fam$SalePrice,
+     main = "Histogram of SalePrice",
+     xlab = "train_1fam - SalePrice",
+     col = "steelblue")
+
+#qqplot 
+qqnorm(train_1fam$SalePrice,
+       col = ifelse(train_1fam$SalePrice %in% 
+                      c(boxplot.stats(train_1fam$SalePrice)$out), #red for outliers
+                    "red","black"))
+qqline(train_1fam$SalePrice)
+
+#######----NO OUTLIERS----#########
+
+#histogram2
+hist(train_1fam_no_outliers$SalePrice,
+     main = "Histogram of SalePrice (No Outliers)",
+     xlab = "train_1fam_no_outliers - SalePrice",
+     col = "green")
+
+#qqplot2
+qqnorm(train_1fam_no_outliers$SalePrice,
+       col = ifelse(train_1fam_no_outliers$SalePrice %in% 
+                      c(boxplot.stats(train_1fam_no_outliers$SalePrice)$out), #red for outliers
+                    "red","black"))
+qqline(train_1fam_no_outliers$SalePrice)
+```
+
+```{r Null and Missing Values}
+
+library(tidyverse)
+
+train %>% summarise_all(~ sum(is.na(.)))
+
+test %>% summarise_all(~ sum(is.na(.)))
+
+#> # A tibble: 1 x 2
+#>    col1  col2
+#>   <int> <int>
+#> 1     1     2
+
+
+```
+We utilize tidyverse to sum the amount of nulls per columns. For this exercise, we will be focusing on the top 10 variables that are correlated to SalePrice. Missing values will be replaced if they are found in features relevant to this analysis.
+
+We notice that some of the numeric variables contain NA values, so for these we will replace nulls with the median values for the following variables: LotFrontage, MasVnrArea, BsmtFinSF1, BsmtFinSF2, BsmtUnfSF, TotalBsmtSF BsmtFullBath, BsmtHalfBath, GarageYrBlt
+
+Filled NA's for the test data as well. 
+
+```{r Null and Missing Values - Clean}
+
+train2 <- train_1fam_no_outliers
+
+
+#df$value[is.na(df$value)] <- median(df$value, na.rm=TRUE)
+train2$LotFrontage[is.na(train2$LotFrontage)] <- median(train2$LotFrontage, na.rm=TRUE)
+train2$MasVnrArea[is.na(train2$MasVnrArea)] <- median(train2$MasVnrArea, na.rm=TRUE)
+train2$BsmtFinSF1[is.na(train2$BsmtFinSF1)] <- median(train2$BsmtFinSF1, na.rm=TRUE)
+train2$BsmtFinSF2[is.na(train2$BsmtFinSF2)] <- median(train2$BsmtFinSF2, na.rm=TRUE)
+train2$BsmtUnfSF[is.na(train2$BsmtUnfSF)] <- median(train2$BsmtUnfSF, na.rm=TRUE)
+train2$TotalBsmtSF[is.na(train2$TotalBsmtSF)] <- median(train2$TotalBsmtSF, na.rm=TRUE)
+train2$BsmtFullBath[is.na(train2$BsmtFullBath)] <- median(train2$BsmtFullBath, na.rm=TRUE)
+train2$BsmtHalfBath[is.na(train2$BsmtHalfBath)] <- median(train2$BsmtHalfBath, na.rm=TRUE)
+train2$GarageYrBlt[is.na(train2$GarageYrBlt)] <- median(train2$GarageYrBlt, na.rm=TRUE)
+train2$GrLivArea[is.na(train2$GrLivArea)] <- median(train2$GrLivArea, na.rm=TRUE)
+
+test$LotFrontage[is.na(test$LotFrontage)] <- median(test$LotFrontage, na.rm=TRUE)
+test$MasVnrArea[is.na(test$MasVnrArea)] <- median(test$MasVnrArea, na.rm=TRUE)
+test$BsmtFinSF1[is.na(test$BsmtFinSF1)] <- median(test$BsmtFinSF1, na.rm=TRUE)
+test$BsmtFinSF2[is.na(test$BsmtFinSF2)] <- median(test$BsmtFinSF2, na.rm=TRUE)
+test$BsmtUnfSF[is.na(test$BsmtUnfSF)] <- median(test$BsmtUnfSF, na.rm=TRUE)
+test$TotalBsmtSF[is.na(test$TotalBsmtSF)] <- median(test$TotalBsmtSF, na.rm=TRUE)
+test$BsmtFullBath[is.na(test$BsmtFullBath)] <- median(test$BsmtFullBath, na.rm=TRUE)
+test$BsmtHalfBath[is.na(test$BsmtHalfBath)] <- median(test$BsmtHalfBath, na.rm=TRUE)
+test$GarageYrBlt[is.na(test$GarageYrBlt)] <- median(test$GarageYrBlt, na.rm=TRUE)
+test$GrLivArea[is.na(test$GrLivArea)] <- median(test$GrLivArea, na.rm=TRUE)
+test$GarageCars[is.na(test$GarageCars)] <- median(test$GarageCars, na.rm=TRUE)
+test$GarageArea[is.na(test$GarageArea)] <- median(test$GarageArea, na.rm=TRUE)
+```
+
+
+```{r Data Quality Check - Null Count and Negative SalePrices}
+summary(train2)
+
+#check for any missing values in the data
+colSums(is.na(train2))
+
+#create table to count null values and percentage against overall population 
+
+nullcount_df <- sapply(train2,function(y) sum(length(which(is.na(y)))))
+nullcount_df <- data.frame(sort(nullcount_df[nullcount_df>0], decreasing=TRUE))
+
+colnames(nullcount_df)[1] <- "NullCount"
+nullcount_df$PctNull <- round(nullcount_df$NullCount / (nrow(train2)),2)
+
+nullcount_df
+
+#check for negative zero values in sales price
+paste('number of properties with 0 or negative saleprice',sum(train2$SalePrice <= 0))
+
+#colSums(is.na(subdat))
+```
+
+To make this dataset more robust, we add a few features to gain understanding on total square footage, house sage, quality, and price per square foot.  
+```{r Feature Engineering - Define New Variables}
+#Recommendation from AmesSkeletonCode_R.txt
+
+#TRAIN
+
+#1. Quality index
+train2$QualityIndex <- train2$OverallQual * train2$OverallCond
+
+#2. totalsqftcalc
+train2$totalsqftcalc <- train2$BsmtFinSF1 + train2$BsmtFinSF2 + train2$GrLivArea
+
+#3. Total floor square foot 
+train2$TotalFloorSF <- train2$FirstFlrSF + train2$SecondFlrSF
+
+#4. House age
+train2$HouseAge <- train2$YrSold - train2$YearBuilt
+
+#5. Log transformed sale price 
+train2$logSalePrice <- log(train2$SalePrice)
+
+skewness(train2$logSalePrice)
+kurtosis(train2$logSalePrice)
+
+
+#6. Price per square foot 
+train2$price_sqft <- train2$SalePrice/train2$TotalFloorSF
+
+#Summary price per square foot
+summary(train2$price_sqft)
+
+#Histogram of price per square foot 
+hist(train2$price_sqft)
+
+
+
+#TEST DATASET
+test$QualityIndex <- test$OverallQual * test$OverallCond
+test$totalsqftcalc <- test$BsmtFinSF1 + test$BsmtFinSF2 + test$GrLivArea
+
+test$TotalFloorSF <- test$FirstFlrSF + test$SecondFlrSF
+test$HouseAge <- test$YrSold - test$YearBuilt
+
+
+```
+
+To decide on the top ten variables that are important to SalePrice, we will utilize a correlation matrix and sort for variables that are more related to SalePrice. 
+
+```{r Numeric Variables - Correlation to SalePrice}
+?cor
+library(tidyverse)
+library(caret)
+
+train2_matrix <- train2 %>%
+    select_if(is.numeric) %>%
+    cor(.,train2$SalePrice)
+
+train2_matrix[order(train2_matrix[,1],decreasing=TRUE),]
+
+```
+
+It may  be useful to look at Nominal categories:
+Neighborhood
+Condition1
+
+TOP FIFTEEN NUMERICAL VARIABLES: 
+
+OverallQual, TotalFloorSF, GrLivArea, totalsqftcalc, GarageCars, FullBath, GarageArea, YearBuilt, TotalBsmtSF, TotRmsAbvGrd, FirstFlrSF, YearRemodel, GarageYrBlt, QualityIndex, Fireplaces, MasVnrArea, HalfBath
+
+Scatterplots, scatterplot smoothers such as LOESS, and boxplots will be utilized to analyze these variables. 
+
+Let's take a look at the Neighborhood and Condition1 categories first to see if there are noticeable changes in SalePrice based on where the property is located.
+```{r Nominal Variables - Neighborhood and Condition1}
+#Neighborhood
+
+ggplot(train2, aes(factor(Neighborhood), SalePrice)) + 
+  
+  geom_bar(stat="identity", position = "dodge") + 
+  
+  scale_fill_brewer(palette = "Set1") + 
+  
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))+ 
+  
+  labs(x = 'Neighborhood', y='SalePrice', title='SalePrice ~ Neighborhood') + 
+  
+  scale_y_continuous(labels = scales::comma)
+
+
+#Condition1
+
+ggplot(train2, aes(factor(Condition1), SalePrice)) + 
+  
+  geom_bar(stat="identity", position = "dodge") + 
+  
+  scale_fill_brewer(palette = "Set1") + 
+  
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))+ 
+  
+  labs(x = 'Condition1', y='SalePrice', title='SalePrice ~ Condition1') + 
+  
+  scale_y_continuous(labels = scales::comma)
+
+```
+
+Discrete: 
+1) OverallQual (Ordinal, 1-10)
+4) GarageCars (Size of garage in car capacity)
+5) FullBath (Full bathrooms above grade)
+7) YearBuilt (original construction date)
+9) TotRmsAbvGrd (total rooms above grade does not include bathrooms)
+11) YearRemodel (remodel date)
+12) GarageYrBlt (Garage year built)
+13) QualityIndex (Overall Quality * Overall Condition)
+14) Fireplaces (number of fireplaces)
+16) HalfBath (half baths above grade)
+
+```{r Discrete Categories}
+par(mfrow = c(2,2))
+
+#Sale Price vs Year Built
+plot(x = train2$YearBuilt, 
+     y = train2$SalePrice, 
+     main = "SalePrice ~ YearBuilt",
+     col="steelblue4",  
+     xlab="Year Built", 
+     ylab="Sale Price", 
+     pch = 20)
+
+#Sale Price vs Overall Quality
+plot(x = train2$OverallQual, 
+     y = train2$SalePrice, 
+     main = "SalePrice ~ OverallQual",
+     col="steelblue2",  
+     xlab="Overall Quality", 
+     ylab="Sale Price", 
+     pch = 20)
+
+#Sale Price vs Year Built
+plot(x = train2$YearBuilt, 
+     y = train2$logSalePrice, 
+     main = "log(SalePrice) ~ YearBuilt",
+     col="steelblue4",  
+     xlab="Year Built", 
+     ylab="Sale Price", 
+     pch = 20)
+
+#Sale Price vs Overall Quality
+plot(x = train2$OverallQual, 
+     y = train2$logSalePrice, 
+     main = "log(SalePrice) ~ OverallQual",
+     col="steelblue2",  
+     xlab="Overall Quality", 
+     ylab="Sale Price", 
+     pch = 20)
+```
+```{r Discrete Categories 2}
+par(mfrow = c(1,2))
+
+#Sale Price and Quality Index
+plot(x = train2$QualityIndex, 
+     y = train2$SalePrice, 
+     main = "SalePrice ~ QualityIndex",
+     col="steelblue3",  
+     xlab="Quality Index", 
+     ylab="Sale Price", 
+     pch = 20)
+
+#Sale Price and Garage Cars
+plot(x = train2$GarageCars, 
+     y = train2$SalePrice, 
+     main = "SalePrice ~ GarageCars",
+     col="steelblue",  
+     xlab="GarageCars", 
+     ylab="Sale Price", 
+     pch = 20)
+```
+
+
+```{r Discrete - Built and Remodeled}
+#Year Remodel ~ Year Built
+plot(x = train2$YearBuilt,
+     y = train2$YearRemodel,
+     main = "Year Remodeled ~ Year Built",
+     sub = "Cross calculated using median values",
+     xlab = "x = Year Built",
+     ylab = "y = Year Remodeled",
+     pch = 20
+     )
+
+#ablines 
+abline(h = median(train2$YearBuilt), col = "red", lty = 8, lwd = 1)
+abline(v = median(train2$YearRemodel), col = "red", lty = 8, lwd = 1)
+
+```
+
+Continuous:
+2) TotalFloorSF (Feature Engineering)
+3) GRLivArea (Above grade ground living area square feet)
+6) GarageArea (Size of garage in square feet)
+8) TotalBsmtSF (Total sqft of basement area)
+10) FirstFlrSF (First floor square feet)
+15) MmasVnrArea (Masonry veneer area in square)
+
+
+```{r Continuous Variables}
+par(mfrow = c(2,2))
+
+#Sale Price vs Year Built
+plot(x = train2$GrLivArea, 
+     y = train2$SalePrice, 
+     main = "SalePrice ~ YearBuilt",
+     col="steelblue4",  
+     xlab="Year Built", 
+     ylab="Sale Price", 
+     pch = 20)
+
+#Sale Price vs Overall Quality
+plot(x = train2$GrLivArea, 
+     y = train2$SalePrice, 
+     main = "SalePrice ~ OverallQual",
+     col="steelblue2",  
+     xlab="Overall Quality", 
+     ylab="Sale Price", 
+     pch = 20)
+
+#Sale Price vs Year Built
+plot(x = train2$TotalFloorSF, 
+     y = train2$logSalePrice, 
+     main = "log(SalePrice) ~ YearBuilt",
+     col="steelblue4",  
+     xlab="Year Built", 
+     ylab="Sale Price", 
+     pch = 20)
+
+#Sale Price vs Overall Quality
+plot(x = train2$GrLivArea, 
+     y = train2$logSalePrice, 
+     main = "log
+     (SalePrice) ~ OverallQual",
+     col="steelblue2",  
+     xlab="Overall Quality", 
+     ylab="Sale Price",
+     pch = 20)
+```
+
+```{r Adjustments to train2 dataframe after EDA}
+#In statistics, log base 10 (log10) can be used to transform data for the following reasons: To make positively skewed data more "normal" To account for curvature in a linear model. To stabilize variation within groups
+
+#This can be valuable both for making patterns in the data more interpretable and for helping to meet the assumptions of inferential statistics. 
+
+#The log transformation is, arguably, the most popular among the different types of transformations used to transform skewed data to approximately conform to normality. If the original data follows a log-normal distribution or approximately so, then the log-transformed data follows a normal or near normal distribution
+
+#There were some houses that were built before 1900 that are not representative of the regular house
+train2 <- subset(train2, train2$YearBuilt >= 1900)
+
+#Removing outlier home that had a 5-car garage 
+train2 <- subset(train2, train2$GarageCars <= 4)
+```
+
+Remaining Training Dataset: (Started with 2039 records)
+```{r Dim}
+dim(train)
+dim(train2)
+```
+
+***BUILD MODELS***
+Linear Regression Models
+1) Single Prediction Variable
+2) Single Prediction Variable
+3) Multiple Regression Model (2 Predictor Variables)
+4) Multiple Regression Model (Top 15 Numerical Predictor Variables)
+5) Ensemble of Model 1 through Model 4
+
+```{r Model 1 (Single LM)}
+#Simple Model with Cleaned Data (train2)
+#OverallQual
+model1 <- lm(SalePrice ~ OverallQual, dat=train2)
+anova(model1)
+summary(model1)
+plot(model1)
+```
+```{r - Model 2 - simple linear regression}
+#GrLivArea
+model2 <- lm(SalePrice ~ GrLivArea, dat=train2)
+anova(model2)
+summary(model2)
+```
+
+***Neighborhood Accuracy***
+Use one of your models from HW01 (MODEL 1). 
+1) Make a boxplot of the residuals by neighborhood. 
+1a) Which neighborhoods are better fit by the model? 
+1b) Do you have neighborhoods that are consistently over-predicted? 
+1c) Do you have neighborhoods that are consistently under-predicted?
+
+```{r Neighborhood Accuracy}
+help(resid)
+
+#1) Make a boxplot of the residuals by neighborhood. 
+
+model1.res = resid(model1)
+
+#This boxplot helps visualize which neighborhoods have mean residuals that are closest and furthest from zero (zero being right on the regression line)
+par(cex.axis = 0.5) 
+
+boxplot(model1.res ~ Neighborhood, 
+        data = train2,
+        col = "steelblue3",
+        pch = 1,
+        main = "Neighborhood Accuracy",
+        cex = 1.0)
+
+#Mean Residual by Neighborhood
+neighborhood_accuracy <- aggregate(x = model1.res, by = list(train2$Neighborhood), FUN = mean)
+
+#Sort based on mean residual 
+neighborhood_accuracy[order(neighborhood_accuracy[,2]),]
+
+#1a) Which neighborhoods are better fit by the model? 
+paste('We see that the neighborhoods with average residuals closest to the fitted line are: Sawyer, Gilbert, NWAmes, CollgCr, and Mitchel.')
+#1b) Do you have neighborhoods that are consistently over-predicted? 
+paste('NridgHt, ClearCr, and StoneBr all have average residuals greater than $30,000, which suggests that it is consistently over-predicted based on model1.')
+#1c) Do you have neighborhoods that are consistently under-predicted?
+paste('Blmngton, OldTown, and IDOTRR have an average negative residual that is greater than $20,000, which suggests that they are consistently under-predicted based on model1.')
+```
+
+
+
+***Neighborhood Accuracy Continued...***
+
+2) Compute actual and estimated mean price per square foot for each neighborhood.
+3) Group the neighborhoods by actual price per square foot. 
+3a) Create between 3 and 6 groups (FOUR groups). 
+4) Code a family of indicator variables for the neighborhood groups to include in your multiple regression model. See Chapter 5 p131 in C&H. 
+4a) Your indicator variables should be of the form Group1 = 1 if ppsf (price per square foot) is in some range, Group1 = 0 otherwise. 
+4b)The dummy or indicator variable notation, has a long history in mathematics. It is also referred to as the Kronecker delta. As an example, think about a simple way for an indicator using a single variable to represent gender. Gender = 1 if male, Gender = 0 otherwise. 
+5) Expand this to the neighborhoods where you have more than two possible outcomes. 
+6) Decide which neighborhood group should be the reference group. 
+7) Then for each of the other groups set up the 1 or 0 naming. 1 means you are in that group, 0 means you are not in that group. 
+7a)If each of the groups you define has the value 0 then that will define the reference group. 
+There is much written on this topic and it is based on knowing how to set up the dummy, 1, 0 notation. 
+Also, the matrix design for solving this type of problem uses the 1, 0 notation. 
+Common terminology in statistics for random variables is let X = 1 if something happens, X = 0 if
+it doesn't happen. So, the notation P(X = 1) has a clear meaning. 
+To understand how your model works you have to understand this notation.
+8) What is your base category? 
+9) Refit your multiple regression model with your indicator variables (WILL INCLUDE FOR MODEL3 BELOW)
+
+```{r - Feature Engineering - NbhdGrp (grp1,grp2,grp3)}
+
+summary(train2$price_sqft)
+
+#### Clean up of the Neighborhood varaible  ########
+train2$NbhdGrp <-
+  ifelse(train2$price_sqft<=100, "grp1", 
+         ifelse(train2$price_sqft<=120, "grp2",
+                ifelse(train2$price_sqft<=140, "grp3",
+                       "grp4"))) 
+
+################ include categoriacl variable in the model #######
+
+MLRresult = lm(SalePrice ~ TotalFloorSF+OverallQual+NbhdGrp, data=train2)
+anova(MLRresult)
+summary(MLRresult)
+pred <- as.data.frame(predict(MLRresult,train2))
+names(pred)
+library(reshape)
+pred <- rename(pred, c("predict(MLRresult, train2)" = "prd"))
+train2$pred <- pred$prd
+train2$res <- train2$SalePrice - train2$pred
+train2$absres <- abs(train2$res)
+MAE <- mean(train2$absres)
+MAE
+
+################ define dummy variables ###################
+
+train2$NbhdGrp1 <- 
+  ifelse(train2$NbhdGrp == "grp1", 1, 0)
+train2$NbhdGrp2 <- 
+  ifelse(train2$NbhdGrp == "grp2", 1, 0)
+train2$NbhdGrp3 <- 
+  ifelse(train2$NbhdGrp == "grp3", 1, 0)
+train2$NbhdGrp4 <- 
+  ifelse(train2$NbhdGrp == "grp4", 1, 0)
+```
+
+```{r - Analyze Neighborhood Variable}
+############## analyze Neighborhood variable #########
+
+require(ggplot2)
+ggplot(train2, aes(x=Neighborhood, y=SalePrice)) + 
+  geom_boxplot(fill="blue") +
+  labs(title="Distribution of Sale Price") +
+  theme(plot.title=element_text(lineheight=0.8, face="bold", hjust=0.5))
+
+#########################################################
+library(plyr)
+
+subdat1 <- ddply(train2, .(Neighborhood), summarise, 
+                 MAE = mean(absres))
+subdat2 <- ddply(train2, .(Neighborhood), summarise, 
+                 MeanPrice = mean(SalePrice))
+subdat3 <- ddply(train2, .(Neighborhood), summarise, 
+                 TotalPrice = sum(SalePrice))
+subdat4 <- ddply(train2, .(Neighborhood), summarise, 
+                 TotalSqft = sum(TotalFloorSF))
+subdat34 <- cbind(subdat3,subdat4)
+
+subdat34$AvgPr_Sqft <- subdat34$TotalPrice/subdat34$TotalSqft
+
+subdatall <- subdat1
+subdatall$MeanPrice <- subdat2$MeanPrice
+subdatall$AvgPr_Sqft <- subdat34$AvgPr_Sqft
+
+require(ggplot2)
+ggplot(subdatall, aes(x=AvgPr_Sqft, y=MeanPrice)) + 
+  geom_point(color="blue", shape=1,size=3) +
+  ggtitle("Scatter Plot") +
+  theme(plot.title=element_text(lineheight=0.8, face="bold", hjust=0.5))
+########################################################
+subdatall
+```
+
+
+```{r Model 1a - Revised (Multiple Regression with Neighborhood Groups)}
+#Simple Model with Cleaned Data (train2)
+#OverallQual
+model1a <- lm(SalePrice ~ OverallQual + GrLivArea + totalsqftcalc + GarageCars + NbhdGrp1+NbhdGrp2+NbhdGrp3+NbhdGrp4, dat=train2)
+anova(model1a)
+summary(model1a)
+plot(model1a)
+```
+```{r Model 1 and 2}
+df_train <- train2[ ,c('index','OverallQual','SalePrice')]
+head(df_train,n=5)
+
+df_train_model1a <- train2[ ,c('index','OverallQual','GrLivArea','totalsqftcalc','GarageCars','NbhdGrp1','NbhdGrp2','NbhdGrp3','NbhdGrp4','SalePrice')]
+head(df_train_model1a,n=5)
+
+df_train_model2 <- train2[ ,c('index','GrLivArea','SalePrice')]
+head(df_train_model2,n=5)
+```
+
+Predict - model1 and model2
+```{r Model 1 and 2 cont}
+p <- predict(model1, df_train)
+p_model1a <- predict(model1a, df_train_model1a)
+p_model2 <- predict(model2, df_train_model2)
+
+df_out <- data.frame(p,train2$SalePrice,train2$index)
+head(df_out, n=5)
+
+df_out_model1a <- data.frame(p_model1a,train2$SalePrice,train2$index)
+head(df_out_model1a, n=5)
+
+df_out_model2 <- data.frame(p_model2,train2$SalePrice,train2$index)
+head(df_out_model2, n=5)
+```
+
+RMSE for train2 data (Model 1 and Model 2)
+```{r Model 1 and 2 cont2}
+mse <- sqrt(mean((p - df_out$train2.SalePrice)^2, na.rm=TRUE))
+round(mse, digits = 0)
+
+mse_model1a <- sqrt(mean((p_model1a - df_out_model1a$train2.SalePrice)^2, na.rm=TRUE))
+round(mse_model1a, digits = 0)
+
+mse_model2 <- sqrt(mean((p_model2 - df_out_model2$train2.SalePrice)^2, na.rm=TRUE))
+round(mse_model2, digits = 0)
+```
+
+Create a dataset with predicted values for the test data for model1 and model2.
+```{r Model 1 and 2 cont3}
+
+df1 <- test[ c(2,3,20, drop=FALSE, na.rm=TRUE)]
+head(df1, n=5)
+
+df2 <- data.frame(test[c('p_saleprice','SalePrice','GrLivArea','index')])
+head(df2, n=5)
+```
+
+Next, create a dataset with predicted values for the test data for model1 and model2
+```{r Model 1 and 2 cont4}
+
+#Test Prediction
+p_saleprice <- predict(model1, df1)
+
+p_saleprice_2<- predict(model2, df2)
+```
+
+Next is to output your predicted sale prices and the test data index values. 
+These index values will match the index values in the score program and those in Kaggle.
+```{r Model 1 cont5}
+
+#Create Output Data Frame
+df_out <- data.frame(p_saleprice,test$index)
+row.names(df_out) <- NULL
+head(df_out, n=5)
+
+df_out_model2 <- data.frame(p_saleprice_2,test$index)
+row.names(df_out_model2) <- NULL
+head(df_out_model2, n=5)
+
+#Finally, the code next will create the csv file for you to upload for this assignment and for Kaggle.
+write.csv(df_out, 'hw02_sample_model1.csv', row.names = TRUE)
+
+write.csv(df_out_model2, 'hw02_sample_model2.csv', row.names = TRUE)
+```
+
+
+
+***Model 3, Model 3a (log(SalePrice)) and Model 4***
+Here we will experient with multiple linear regression (2 or more variables), summarize our findings, and compare results to the single linear models. 
+
+Model 3 = 10 variables
+
+Continuous:
+2) TotalFloorSF (Feature Engineering)
+5) totalsqftcalc
+6) GarageArea (Size of garage in square feet)
+8) TotalBsmtSF (Total sqft of basement area)
+10) MasVnrArea
+
+Discrete: 
+1) OverallQual (Ordinal, 1-10)
+4) GarageCars (Size of garage in car capacity)
+7) YearBuilt (original construction date)
+13) QualityIndex (Overall Quality * Overall Condition)
+
+```{r Model 3 LM SalePrice}
+
+#OverallQual + GrLivArea + 
+model3 <- lm(SalePrice ~ TotalFloorSF+totalsqftcalc+GarageArea+TotalBsmtSF+MasVnrArea
+             +OverallQual+GarageCars+YearBuilt, 
+             dat=train2)
+
+anova(model3)
+summary(model3)
+
+```
+
+```{r Model 3a LM Log SalePrice}
+
+#OverallQual + GrLivArea + 
+model3a <- lm(log(SalePrice) ~ TotalFloorSF+totalsqftcalc+GarageArea+TotalBsmtSF+MasVnrArea
+             +OverallQual+GarageCars+YearBuilt, 
+             dat=train2)
+
+anova(model3a)
+summary(model3a)
+plot(model3a)
+
+```
+
+```{r Model 4 LM}
+#Multiple Linear Regression - All Top Varaibles
+model4 <- lm(SalePrice ~ OverallQual + TotalFloorSF + totalsqftcalc + GrLivArea + GarageCars
+              + FullBath + GarageArea + YearBuilt
+              + TotalBsmtSF + TotRmsAbvGrd + FirstFlrSF
+              + YearRemodel + GarageYrBlt + QualityIndex
+              + Fireplaces + MasVnrArea + 
+               HalfBath + Neighborhood + Condition1, 
+             dat=train2)
+
+anova(model4)
+summary(model4)
+plot(model4)
+```
+               
+```{r Model 3 and Model 4 cont2}
+df_train_model3 <- train2[ ,c('index','TotalFloorSF','totalsqftcalc','GarageArea','TotalBsmtSF','MasVnrArea','OverallQual','GarageCars','YearBuilt','SalePrice')]
+
+df_train_model4 <- train2[ ,c('index','OverallQual','TotalFloorSF','totalsqftcalc','GrLivArea','GarageCars','FullBath','GarageArea', 'YearBuilt','TotalBsmtSF','TotRmsAbvGrd','FirstFlrSF','YearRemodel', 'GarageYrBlt','QualityIndex','Fireplaces','MasVnrArea','HalfBath', 'Neighborhood','Condition1','SalePrice')]
+
+head(df_train_model3,n=5)
+head(df_train_model4,n=5)
+```
+
+Predict - Model 3 and 4
+```{r Model 3 and Model 4 cont3}
+p_model3 <- predict(model3, df_train_model3)
+p_model4 <- predict(model4, df_train_model4)
+
+df_out_model3 <- data.frame(p_model3,train2$SalePrice,train2$index)
+df_out_model4 <- data.frame(p_model4,train2$SalePrice,train2$index)
+
+head(df_out_model3, n=5)
+head(df_out_model4, n=5)
+```
+
+RMSE for train2 data (Model 3, and 4)
+```{r Model 3, and Model 4 cont4} 
+mse_model3 <- sqrt(mean((p_model3 - df_out_model3$train2.SalePrice)^2, na.rm=TRUE))
+round(mse_model3, digits = 0)
+
+mse_model4 <- sqrt(mean((p_model4 - df_out_model4$train2.SalePrice)^2, na.rm=TRUE))
+round(mse_model4, digits = 0)
+```
+
+Create a dataset with predicted values for the test data 
+```{r Model 3 and Model 4 cont5}
+
+df3 <- data.frame(test[c('p_saleprice','SalePrice','TotalFloorSF','totalsqftcalc','GarageArea','TotalBsmtSF','MasVnrArea','OverallQual','GarageCars','YearBuilt','index')])
+head(df3, n=5)
+
+df4 <- data.frame(test[c('p_saleprice','SalePrice','OverallQual','TotalFloorSF','totalsqftcalc','GrLivArea','GarageCars','FullBath','GarageArea','YearBuilt','TotalBsmtSF','TotRmsAbvGrd','FirstFlrSF','YearRemodel','GarageYrBlt','QualityIndex','Fireplaces','MasVnrArea','HalfBath','Neighborhood','Condition1','index')])
+head(df4, n=5)
+
+```
+
+Next, create a dataset with predicted values for the test data for model1 and model2
+```{r Model 3 and Model 4 cont6}
+
+#Test Prediction
+p_saleprice_3 <- predict(model3, df3)
+
+p_saleprice_4<- predict(model4, df4)
+```
+
+Next is to output your predicted sale prices and the test data index values. 
+These index values will match the index values in the score program and those in Kaggle.
+
+```{r Model 3 and Model 4 cont7}
+
+#Create Output Data Frame
+df_out_model3 <- data.frame(p_saleprice_3,test$index)
+row.names(df_out_model3) <- NULL
+head(df_out_model3, n=5)
+
+df_out_model4 <- data.frame(p_saleprice_4,test$index)
+row.names(df_out_model4) <- NULL
+head(df_out_model4, n=5)
+
+#Finally, the code next will create the csv file for you to upload for this assignment and for Kaggle.
+write.csv(df_out_model3, 'hw02_sample_model3.csv', row.names = TRUE)
+
+write.csv(df_out_model4, 'hw02_sample_model4.csv', row.names = TRUE)
+```
+
+***VIF Values***
+Compute the VIF values for the models. If the models have highly correlated pairs
+of predictors that you do not like, then go back, add them to your drop list, and reperform the variable selection before you go on with the assignment. The VIF
+values do not need to be ideal, but if you have a very large VIF value (like 20, 30,
+50 etc.), then you should consider removing a variable so that your variable
+selection models are not junk too.
+
+```{r - Review - VIF Values}
+library(car)
+
+sort(vif(model4),decreasing=TRUE)
+```
+
+***Assignment 3***
+The purpose of assignment 3 is to take a final look and see if models can be improved. 
+
+SECTION 2: Train/Test(Validation)
+
+```{r Observe Nulls in train2 dataset}
+#check for any missing values in the data
+colSums(is.na(train2))
+
+#create table to count null values and percentage against overall population 
+
+nullcount_df <- sapply(train2,function(y) sum(length(which(is.na(y)))))
+nullcount_df <- data.frame(sort(nullcount_df[nullcount_df>0], decreasing=TRUE))
+
+colnames(nullcount_df)[1] <- "NullCount"
+nullcount_df$PctNull <- round(nullcount_df$NullCount / (nrow(train2)),2)
+
+nullcount_df
+
+#check for negative zero values in sales price
+paste('number of properties with 0 or negative saleprice',sum(train2$SalePrice <= 0))
+
+```
+
+
+```{r Drop columns for train.df and test.df}
+#Unwanted Columns
+drop.list <- c('PoolQC','MiscFeature','Alley','Fence','FireplaceQu')
+
+#Cleaned Dataframes 
+#train.clean <- train.df[,!(names(train2) %in% drop.list)]
+#test.clean <- test.df[,!(names(train2) %in% drop.list)]
+
+train2.clean <- train2[,!(names(train2) %in% drop.list)]
+ 
+train2.clean <- na.omit(train2.clean)
+
+#test.final is for kaggle submission
+test.final  <- test[,!(names(test) %in% drop.list)]
+
+dim(train2.clean)
+dim(test.final)
+
+head(train2.clean,n=5)
+head(test.final,n=5)
+```
+
+
+
+```{r Assignment 3 - train and test split}
+
+#set seed
+set.seed(123)
+
+#Random deviates of uniform distribution
+train2.clean$val <- runif(n = dim(train2.clean)[1], 
+                   min = 0,
+                   max = 1)
+
+#Train/Test Split
+#70/30 splitfor in-sample model development and out-of-sample model assessment 
+train.df <- subset(train2.clean, val < 0.70)
+test.df <- subset(train2.clean, val >= 0.70)
+
+# Summary of observations
+knitr::kable(data.frame(
+  "Name" = c("train.df", "test.df","Total"),
+  
+  "AggCount" = c(nrow(train.df), 
+                 nrow(test.df),
+                 (nrow(train.df)+ nrow(test.df))),
+  
+  "Allocation" = c(nrow(train.df) / nrow(train2.clean), 
+                   nrow(test.df) / nrow(train2.clean),
+                   (nrow(train.df) / nrow(train2.clean))+(nrow(test.df) / nrow(train2.clean)))))
+```
+
+***Section 3. Automated variable selection***
+
+Create a pool of candidate predictor variables. You can include dummy coded
+or effect coded variables, but not the original categorical variables. Include a
+well-designed list or table of your pool of candidate predictor variables in your
+report. NOTE: If you need to create additional predictor variables, then
+you will want to create those predictor variables before you perform the
+train/test split.
+
+The easiest way to use variable selection in R is to use some R tricks. If you
+have small data sets (small number of columns), then these tricks are not
+necessary. However, if you have large data sets (large number of columns),
+then these tricks are NECESSARY in order to use variable selection in R
+effectively and easily. 
+
+Trick #1: Create a data frame that only contains the response variable and the
+predictor variables that you plan to use. Do this by creating a drop list and
+using the drop list to shed the unwanted columns from train to create a ‘clean’
+data frame.
+
+train.clean <-train.df[,!(names(my.data) %in% drop.list)];
+
+For this exercise we will only look at the variables with correlation greater than .30, which is selected using "keep.list"
+
+
+```{r train.df2 and test.df2}
+keep.list <- c('SalePrice','OverallQual','TotalFloorSF','GrLivArea','GarageCars','FullBath','GarageArea','YearBuilt','TotRmsAbvGrd','YearRemodel','GarageYrBlt','QualityIndex','Fireplaces','MasVnrArea','HalfBath','BsmtFinSF1','LotFrontage','OpenPorchSF','BedroomAbvGr','BsmtFullBath')
+
+train.df2 <- train.df %>%
+  dplyr::select(keep.list
+  ) 
+train_names <- names(train.df2)
+knitr::kable(tibble(TrainDfVariables = train_names))
+
+test.df2 <- test.df %>%
+  dplyr::select(keep.list
+  ) 
+test_names <- names(test.df2)
+knitr::kable(tibble(TestDfVariables = test_names))
+
+df.final <- train2.clean %>%
+  dplyr::select(keep.list
+  ) 
+dffinal_names <- names(df.final)
+knitr::kable(tibble(df.final = dffinal_names))
+
+#for kaggle submission
+keep.list.test.final <- c('index','SalePrice','OverallQual','TotalFloorSF','GrLivArea','GarageCars','FullBath','GarageArea','YearBuilt','TotRmsAbvGrd','YearRemodel','GarageYrBlt','QualityIndex','Fireplaces','MasVnrArea','HalfBath','BsmtFinSF1','LotFrontage','OpenPorchSF','BedroomAbvGr','BsmtFullBath')
+
+test.final <- test.final %>%
+  dplyr::select(keep.list.test.final
+  ) 
+test.final_names <- names(test.final)
+knitr::kable(tibble(TestDfVariables = test.final_names))
+
+
+```
+
+Need to prepare the actual test dataset (test) to be same as train.df2 and test.df2
+```{r test.final will be used for Kaggle}
+dim(test.final) #extra column is 'index'
+dim(train.df2)
+dim(test.df2)
+dim(df.final)
+head(test.final)
+```
+
+Model Identification: 
+Using the train data find the 'best' models using automated variable selection. Try forward, backward, and stepwise variable selection using the R function stepAIC() from the MASS library. Identify (list) each of these three models individually. 
+
+Name them forward.lm, backward.lm, and stepwise.lm.
+
+Note that variable selection using stepAIC() requires that you specify the upper and lower models in the scope argument. Perform a ‘full search’ or an ‘exhaustive search’, and specify the upper model as the Full Model containing every predictor variable in the variable pool , and the lower model as the Intercept Model. Both of these models are easy to specify in R.
+
+Trick #2: specify the upper model and lower models using these R shortcuts
+
+NOTE: SecondFlrSF and BsmtUnfSF have been removed due to discovery of multicollinearity in this step 
+```{r Trick 2 upper lower models}
+# Define the upper model as the FULL model
+upper.lm <- lm(SalePrice ~ .,data=train.df2);
+summary(upper.lm)
+
+# Define the lower model as the Intercept model
+lower.lm <- lm(SalePrice ~ 1,data=train.df2);
+summary(lower.lm)
+
+# Need a SLR to initialize stepwise selection
+sqft.lm <- lm(SalePrice ~ TotalFloorSF,data=train.df2);
+summary(sqft.lm)
+
+
+#to train with full train set 
+#df.final
+upper.lm2 <- lm(SalePrice ~ .,data=df.final);
+lower.lm2 <- lm(SalePrice ~ 1,data=df.final);
+sqft.lm2 <- lm(SalePrice ~ TotalFloorSF,data=df.final);
+```
+
+Use these three models to initialize and provide the formula needed for the
+scope argument.
+
+Trick #3: use the R function formula() to pass your shortcut definition of the Full Model to the scope argument in stepAIC(). Be sure to read the help page
+for stepAIC() to understand the scope argument and its default value.
+```{r Forward Stepwise}
+# Note: There is only one function for classical model selection in R - stepAIC();
+# stepAIC() is part of the MASS library.
+# The MASS library comes with the BASE R distribution, but you still need to load it;
+library(MASS)
+
+# Call stepAIC() for variable selection
+
+#forward stepwise variable selection
+forward.lm <- stepAIC(object=lower.lm,scope=list(upper=upper.lm,
+                                                 lower=lower.lm),
+                      direction=c('forward'));
+summary(forward.lm)
+
+
+```
+```{r Backward Stepwise}
+#backward stepwise variable selection 
+backward.lm <- stepAIC(object=upper.lm,direction=c('backward'));
+summary(backward.lm)
+
+```
+```{r Stepwise Hybridd}
+#hybrid stepwise variable selection
+stepwise.lm <- stepAIC(object=sqft.lm,scope=list(upper=formula(upper.lm),
+                                                 lower=~1),
+                       direction=c('both'));
+summary(stepwise.lm)
+
+#stepwise.lm for full train set (df.final)
+stepwise.lm.final <- stepAIC(object=sqft.lm2,scope=list(upper=formula(upper.lm2),
+                                                 lower=~1),
+                       direction=c('both'));
+summary(stepwise.lm.final)
+```
+
+Note, you do not specify any data sets when you call stepAIC(). The data set is passed along with the initializing model in the object argument.
+In addition to these three models identified using variable selection, include a fourth model for model comparison purposes. Call this model junk.lm. The
+model is appropriately named. Note that this model will use the train.df data frame since you shed all of these columns off of train.df when you created
+train.clean.
+
+Note, train.df and train.clean are essentially the same data set, train.df just has more columns than train.clean so it is perfectly okay to compare models fit
+on train.df with models fit on train.clean
+
+```{r junk.lm For Comparison Purposes}
+junk.lm <- lm(SalePrice ~ OverallQual + GarageCars, data=train2.clean)
+summary(junk.lm)
+
+```
+
+***Section 4. VIF Check***
+One issue with using variable selection on a pool that contains highly correlated predictor variables is that the variable selection algorithm will select the highly correlated pairs. 
+
+(Hint: do you have correlated predictor variables in the junk model?)
+
+Compute the VIF values for the variable selection models. If the models selected highly correlated pairs of predictors that you do not like, then go
+back, add them to your drop list, and re-perform the variable selection before you go on with the assignment. The VIF values do not need to be ideal, but if
+you have a very large VIF value (like 20, 30, 50 etc.), then you should consider removing a variable so that your variable selection models are not junk too. 
+
+Are you concerned with VIF values for indicator variables? Why or why not? 
+
+NOTE: With VIF Check, we determined that totalsqftcalc was consistently resulting in a VIF of 14.530806, so this feature will be dropped. 
+NOTE: With VIF Check and common sense, we determine that there is multicollinearity between YearBuilt and HouseAge (VIF over 500). Dropped YearBuilt. 
+
+```{r VIF - forward.lm}
+library(car)
+sort(vif(forward.lm),decreasing=TRUE)
+```
+```{r VIF - backward.lm}
+sort(vif(backward.lm),decreasing=TRUE)
+
+```
+
+```{r VIF - stepwise.lm}
+
+sort(vif(stepwise.lm),decreasing=TRUE)
+
+```
+```{r stepwise.lm.final}
+sort(vif(stepwise.lm.final),decreasing=TRUE)
+```
+
+
+```{r VIF - junk.lm}
+
+sort(vif(junk.lm),decreasing=TRUE)
+```
+
+***Section 5. Predictive Accuracy***
+In predictive modeling, you are interested in how well your model performs (predicts) out-of-sample. 
+That is the point of predictive modeling. 
+For each of the four models compute the 
+Mean Squared Error (MSE) and the Mean Absolute Error (MAE) for the test sample. 
+Which model fits the best based on these criteria? 
+Did the model that fit best in-sample predict the best out-ofsample? 
+Do you have a preference for the MSE or the MAE? 
+What does it mean when a model has better predictive accuracy in-sample then it does outof-sample?
+
+```{r}
+forward.test <- predict(forward.lm,newdata=test.df2)
+backward.test <- predict(backward.lm,newdata=test.df2)
+stepwise.test <- predict(stepwise.lm,newdata=test.df2)
+junk.test <- predict(junk.lm,newdata=test.df2)
+
+```
+
+To Remove The Following: 
+TotalBsmtSF (because a negative coefficient here does not make sense)
+LotArea (close to zero)
+FirstFlrSF (close to zero)
+WoodDeckSF (close to zero)
+
+```{r Summary Statistics}
+fwd_summary <- summary(forward.lm)
+back_summary <- summary(backward.lm)
+step_summary <- summary(stepwise.lm)
+junk_summary <- summary(junk.lm)
+
+fwd_adjr <- fwd_summary$adj.r.squared
+back_adjr <- back_summary$adj.r.squared
+step_adjr <- step_summary$adj.r.squared
+junk_adjr <- junk_summary$adj.r.squared
+
+fwd_mse <- mean(forward.lm$residuals^2)
+back_mse <- mean(backward.lm$residuals^2)
+step_mse <- mean(stepwise.lm$residuals^2)
+junk_mse <- mean(junk.lm$residuals^2)
+
+fwd_mae <- mean(abs(forward.lm$residuals))
+back_mae <- mean(abs(backward.lm$residuals))
+step_mae <- mean(abs(stepwise.lm$residuals))
+junk_mae <- mean(abs(junk.lm$residuals))
+
+adjr_models <- c(fwd_adjr, back_adjr, step_adjr, junk_adjr)
+mse_models <- c(fwd_mse, back_mse, step_mse, junk_mse)
+mae_models <- c(fwd_mae, back_mae, step_mae, junk_mae)
+
+#Summary Dataframe
+knitr::kable(data.frame(
+  Model = c("Forward", "Backward", "Both", "Junk"),
+  AdjRSquared = adjr_models,
+  MSE = mse_models,
+  MAE = mae_models
+))
+
+# (Intercept)  TotalFloorSF   OverallQual     YearBuilt    BsmtFinSF1    GarageArea  QualityIndex   TotalBsmtSF       LotArea    Fireplaces   YearRemodel 
+#-1.212904e+06  4.909608e+01  6.543829e+03  4.455235e+02  1.149367e+01  2.715189e+01  1.085110e+03  2.485567e+01  7.915008e-01  5.559778e+03  1.543744e+02 
+ #BsmtFullBath  BedroomAbvGr    GarageCars   OpenPorchSF  TotRmsAbvGrd    FirstFlrSF      HalfBath    WoodDeckSF 
+ #5.273484e+03 -5.504396e+03  5.130018e+03  3.303875e+01  2.057285e+03 -8.145694e+00 -3.211767e+03  8.187256e+00 
+
+#Based on the Stepwise Coefficients above, we see that a negatiave TotalBsmtSF coefficient does not make sense
+#LotArea coefficient is close to zero
+#FirstFlrSF coefficient is close to zero
+#WoodDeckSF coefficient is close to zero
+forward.lm$coefficients
+backward.lm$coefficients
+stepwise.lm$coefficients
+stepwise.lm.final$coefficients
+junk.lm$coefficients
+```
+
+```{r}
+mean(fwd_summary$residuals)
+```
+
+Create a dataset with predicted values for the test data 
+```{r test.final predictions}
+
+test.final2 <- test.final
+head(test.final2, n=5)
+
+```
+
+Next, create a dataset with predicted values for the test data for model1 and model2
+```{r p_saleprice_stepwise}
+
+#Test Prediction
+p_saleprice_stepwise <- predict(stepwise.lm.final, test.final2)
+
+```
+
+Next is to output your predicted sale prices and the test data index values. 
+These index values will match the index values in the score program and those in Kaggle.
+
+```{r stepwise - output}
+
+#Create Output Data Frame
+df_out_stepwise <- data.frame(p_saleprice_stepwise,test$index)
+rename(df_out_stepwise,c('p_saleprice_stepwise'='p_saleprice','test.index'='index'))
+
+
+#Finally, the code next will create the csv file for you to upload for this assignment and for Kaggle.
+write.csv(df_out_stepwise, 'hw03_predictions.csv', row.names = TRUE)
+
+
+
+```
+
+
+
+
+
+
+
+
+
