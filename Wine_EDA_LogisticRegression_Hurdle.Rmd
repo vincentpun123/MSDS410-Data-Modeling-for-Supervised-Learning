@@ -1,0 +1,526 @@
+---
+title: "Pun_410_ModelingAssignment4 + Pun_410_ComputationalAssignment6"
+author: "Vincent Pun"
+date: "11/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+This data set contains information on approximately 12,000 commercially available wines. The variables are mostly related to the chemical properties of the wine being sold. The target variable is the number of sample cases of wine that were purchased by wine distribution companies after sampling a wine. These cases would be used to provide tasting samples to restaurants and wine stores around the United States. The more sample cases purchased, the more likely a wine is to be sold at a high end restaurant.
+
+A large wine manufacturer is studying the data in order to predict the number of wine cases ordered based upon the wine characteristics. If the wine manufacturer can predict the number of cases, then that manufacturer will be able to adjust their wine offering to maximize sales.
+
+For this assignment you will only model for sale /no sale for the wine (target>0 vs target = 0). In the next assignment you will model both sale and number of cases sold.
+
+HINT: Sometimes, the fact that a variable is missing is actually predictive of the target.
+You can only use the variables given to you (or variable that you derive from the variables provided).
+
+```{r Libraries}
+library(lessR, quietly = TRUE)
+library(tidyverse, quietly = TRUE)
+library(knitr)
+library(car)
+
+library(DataExplorer, quietly = TRUE)
+library(pscl)
+```
+
+
+1. DATA EXPLORATION (50 points)
+Describe the size and the variables in the WINE data set so that I am convinced you understand it.
+If you know how to do pivot tables in Excel, it is a great tool for Exploratory Data Analysis (EDA).
+Please do NOT treat this as a check list of things to do to complete the assignment. You should have your own thoughts on what to tell the boss. These are just ideas:
+a. Mean / Standard Deviation / Median
+b. Bar Chart or Box Plot of the data
+c. Is the data correlated to the target variable (or to other variables?)
+
+d. Are any of the variables missing and need to be imputed “fixed”?
+e. Don’t delete records, fix them
+```{r Read Data}
+setwd("~/Documents/Northwestern/MSDS 410/Module 9 Poisson ZIP LR Modeling Computational/Modeling Assignment 4 Modeling DIchotomous Data")
+
+train <- read.csv('wine_train.csv')
+test <- read.csv('wine_test.csv')
+
+dim(train)
+dim(test)
+
+head(train, n=5)
+head(test, n=5)
+```
+
+
+Looking at summary statistics, it appears that there are records that contain negaitve values for certain attributes: 
+
+FixedAcidity
+VolatileAcidity
+CitricAcid
+ResidualSugar
+Chlorides
+FreeSulfurDioxide
+TotalSulfurDioxide
+Sulphates
+Alcohol
+LabelAppeal (this might be okay)
+
+This does not seem accurate, as values should probabily be greater than or equal to zero. 
+```{r SUMMARY STATISTICS}
+summary(train)
+summary(test)
+```
+```{r Plot Missing Data}
+plot_missing(train)
+plot_missing(test)
+```
+
+
+Distribution appears to look like a Zero-Inflated Poisson Distribution. A lot of records bought 0. Most common appears to be 4. 
+```{r Train - Target HISTOGRAM}
+Histogram(x = TARGET, data = train)
+
+```
+
+
+PLOT (TARGET ~ STARS): It appears that STARS is a good discriminating variable when it comes to predicting TARGET
+
+PLOT(TARGET ~ LabelAppeal): It appears that LabelAppeal can range from -2 to 2. While it does appear that higher label appeal suggests that target can be higher, it seems that most purchases in the training data are made for wines that have -1 to 0 label appeal. A label appeal of -1 looks equally as likely to have a target of 0 as a label appeal of 1, so this may be the most powerful predictor attribute out there. 
+
+```{r Scatterplot TARGET ~ STARS}
+ScatterPlot(STARS, TARGET, data=train)
+ScatterPlot(LabelAppeal, TARGET, data = train)
+
+```
+
+```{r Plot histogram}
+plot_histogram(train)
+```
+
+
+
+```{r TRAIN - missing values}
+#check for any missing values in the data
+colSums(is.na(train))
+
+#create table to count null values and percentage against overall population 
+
+nullcount_df <- sapply(train,function(y) sum(length(which(is.na(y)))))
+nullcount_df <- data.frame(sort(nullcount_df[nullcount_df>=0], decreasing=TRUE))
+
+colnames(nullcount_df)[1] <- "NullCount"
+nullcount_df$PctNull <- round(nullcount_df$NullCount / (nrow(train)),2)
+
+nullcount_df
+
+#check for negative zero values in sales price
+paste('CHECK IF ANY TARGET VALUES ARE NEGATIVE (WOULD BE INCORRECT).... ',sum(train$TARGET < 0))
+paste('CHECK IF ANY STARS VALUES ARE NEGATIVE (WOULD BE INCORRECT).... ',sum(train$STARS < 0))
+```
+
+```{r TEST - missing values}
+#check for any missing values in the data
+colSums(is.na(test))
+
+#create table to count null values and percentage against overall population 
+
+nullcount_df <- sapply(test,function(y) sum(length(which(is.na(y)))))
+nullcount_df <- data.frame(sort(nullcount_df[nullcount_df>=0], decreasing=TRUE))
+
+colnames(nullcount_df)[1] <- "NullCount"
+nullcount_df$PctNull <- round(nullcount_df$NullCount / (nrow(test)),2)
+
+nullcount_df
+
+#check for negative zero values in sales price
+paste('CHECK IF ANY TARGET VALUES ARE NEGATIVE (WOULD BE INCORRECT).... ',sum(test$TARGET < 0))
+paste('CHECK IF ANY STARS VALUES ARE NEGATIVE (WOULD BE INCORRECT).... ',sum(test$STARS < 0))
+```
+
+
+##########################################################################################################################################
+2. DATA PREPARATION (50 Points)
+This is a critical area for building great models. It is the reason we give you messy data sets to work with. We want you to have a real world experience so you will be able to build better models in the real world.
+Describe how you have transformed the data by changing the original variables or creating new variables. If you don’t show how you transformed the data I will not be able to see why your model performed good or bad. If you did transform the data or create new variables, tell me why.
+
+Possible transformations:
+a. Fix missing values (maybe with a Mean or Median value or use a decision tree)
+b. Create flags to suggest if a variable was missing.
+c. Transform data by putting it into buckets
+d. Mathematical transforms such as log or square root
+e. Combine variables (such as ratios or adding or multiplying) to create new variables
+
+**Need to take the absolute value of these columns for both train and test datasets:**
+FixedAcidity
+VolatileAcidity
+CitricAcid
+ResidualSugar
+Chlorides
+FreeSulfurDioxide
+TotalSulfurDioxide
+Sulphates
+Alcohol
+```{r Reverse Negative Values}
+hasnegative <- list(c('FixedAcidity','VolatileAcidity', 'CitricAcid','ResidualSugar','Chlorides','FreeSulfurDioxide','TotalSulfurDioxide','Sulphates','Alcohol'))
+
+#TRAIN
+train$FixedAcidity  <- abs(train$FixedAcidity)
+train$VolatileAcidity  <- abs(train$VolatileAcidity)
+train$CitricAcid  <- abs(train$CitricAcid)
+train$ResidualSugar  <- abs(train$ResidualSugar)
+train$Chlorides  <- abs(train$Chlorides)
+train$FreeSulfurDioxide  <- abs(train$FreeSulfurDioxide)
+train$TotalSulfurDioxide  <- abs(train$TotalSulfurDioxide)
+train$Sulphates  <- abs(train$Sulphates)
+train$Alcohol  <- abs(train$Alcohol)
+
+#TEST
+test$FixedAcidity  <- abs(test$FixedAcidity)
+test$VolatileAcidity  <- abs(test$VolatileAcidity)
+test$CitricAcid  <- abs(test$CitricAcid)
+test$ResidualSugar  <- abs(test$ResidualSugar)
+test$Chlorides  <- abs(test$Chlorides)
+test$FreeSulfurDioxide  <- abs(test$FreeSulfurDioxide)
+test$TotalSulfurDioxide  <- abs(test$TotalSulfurDioxide)
+test$Sulphates  <- abs(test$Sulphates)
+test$Alcohol  <- abs(test$Alcohol)
+
+
+
+```
+
+**Missing Values**
+STARS	3359	0.26		(HINT THIS MAY BE USEFUL)
+Sulphates	1210	0.09		
+TotalSulfurDioxide	682	0.05		
+Alcohol	653	0.05		
+FreeSulfurDioxide	647	0.05		
+Chlorides	638	0.05		
+ResidualSugar	616	0.05		
+pH	395	0.03
+```{r Fill Missing Values Train and Test - MEDIAN}
+
+#TRAIN
+train$Sulphates[is.na(train$Sulphates)] <- median(train$Sulphates, na.rm = T)
+train$TotalSulfurDioxide[is.na(train$TotalSulfurDioxide)] <- median(train$TotalSulfurDioxide, na.rm = T)
+train$Alcohol[is.na(train$Alcohol)] <- median(train$Alcohol, na.rm = T)
+train$FreeSulfurDioxide[is.na(train$FreeSulfurDioxide)] <- median(train$FreeSulfurDioxide, na.rm = T)
+train$Chlorides[is.na(train$Chlorides)] <- median(train$Chlorides, na.rm = T)
+train$ResidualSugar[is.na(train$ResidualSugar)] <- median(train$ResidualSugar, na.rm = T)
+train$pH[is.na(train$pH)] <- median(train$pH, na.rm = T)
+
+#TEST
+test$Sulphates[is.na(test$Sulphates)] <- median(test$Sulphates, na.rm = T)
+test$TotalSulfurDioxide[is.na(test$TotalSulfurDioxide)] <- median(test$TotalSulfurDioxide, na.rm = T)
+test$Alcohol[is.na(test$Alcohol)] <- median(test$Alcohol, na.rm = T)
+test$FreeSulfurDioxide[is.na(test$FreeSulfurDioxide)] <- median(test$FreeSulfurDioxide, na.rm = T)
+test$Chlorides[is.na(test$Chlorides)] <- median(test$Chlorides, na.rm = T)
+test$ResidualSugar[is.na(test$ResidualSugar)] <- median(test$ResidualSugar, na.rm = T)
+test$pH[is.na(test$pH)] <- median(test$pH, na.rm = T)
+
+```
+
+
+```{r Plot missing data}
+#EDA
+plot_missing(train)
+plot_missing(test)
+```
+
+**FEATURE ENGINEERING**
+
+
+```{r - Feature Engineering - TARGET_BINARY and STARNOT0}
+train$TARGET_BINARY <- ifelse(train$TARGET > 0, 1, 0)
+
+train$STARSNA <- ifelse(is.na(train$STARS), 0, 1)
+test$STARSNA <- ifelse(is.na(test$STARS), 0, 1)
+
+train$STARS <- ifelse(is.na(train$STARS), -1, train$STARS)
+test$STARS <- ifelse(is.na(test$STARS), -1, train$STARS)
+
+plot_scatterplot(split_columns(train)$continuous, by = 'TARGET_BINARY', sampled_rows = 1000L)
+
+#78.63% of the records has a purchase 
+#this is the number to beat
+table(train$TARGET_BINARY, dnn = c("Purchase"))
+```
+
+```{r}
+head(train,n=20)
+```
+
+
+'TARGET_BINARY' + 'STARS' + 'STARSNA' + 'LabelAppeal' + 'AcidIndex' + 'VolatileAcidity' appear to have the greatest correlation to TARGET
+```{r Plot pairwise correlations}
+#plot pairwise correlations
+plot_correlation(train)
+
+```
+
+```{r DataExplorer - Create Report}
+create_report(train)
+```
+
+
+##########################################################################################################################################
+3. BUILD MODELS (30 Points)
+Build at least three different models. Try a linear regression model and two logistic regression models.
+
+You may select the variables manually or use some other method. 
+
+Describe the techniques you used. If you selected a variable for inclusion or exclusion indicate why.
+
+Show all of your models and the statistical significance of the input variables.
+Discuss the coefficients in the model, do they make sense? In this case, about the only thing you can comment on is the number of stars and the wine label appeal. However, you might comment on the coefficient and magnitude of variables and how they are similar or different from model to model. For example, you might say “pH seems to have a major positive impact in my regression model, but a negative effect elsewhere”.
+
+**70/30 Train/Test Split (of train df)**
+train.split
+test.split
+
+```{r TRAIN TEST VALIDATION SPLITS}
+#set seed
+set.seed(123)
+
+#Random deviates of uniform distribution
+train$val <- runif(n = dim(train)[1], 
+                   min = 0,
+                   max = 1)
+
+#Train/Test Split
+#70/30 splitfor in-sample model development and out-of-sample model assessment 
+train.split <- subset(train, val < 0.70)
+test.split <- subset(train, val >= 0.70)
+```
+
+**MODEL 1 - LINEAR MODEL**
+```{r - Model 1 Linear Model}
+model_1 <- lm(TARGET ~ STARS + LabelAppeal + AcidIndex + Alcohol + VolatileAcidity+FixedAcidity, dat = train.split)
+
+anova(model_1)
+
+summary(model_1)
+
+sort(vif(model_1),decreasing=TRUE)
+
+```
+
+Model 1 (Multiple Linear Regression) has a RMSE  of 1.329.
+
+Baseline RMSE if just using the MEAN TARGET value (3.029) is 1.93, so Model 1 is slightly better.
+
+RMSE is used for evaluation because that is how the Kaggle competition is evaluating submissions. 
+
+78.8% Accuracy vs 78.3% Baseline Accuracy 
+
+**Model 1**
+```{r EVALUATE - MODEL 1}
+model_1_TEST <- predict(model_1,test.split)
+
+df_out_model_1 <- data.frame(model_1_TEST, test.split$TARGET)
+
+head(df_out_model_1, n=5)
+
+rmse_model_1 <- sqrt(mean((df_out_model_1$model_1_TEST - df_out_model_1$test.split.TARGET)^2, na.rm=TRUE))
+paste('Model 1 RMSE = ',round(rmse_model_1, digits = 5))
+
+rmse_baseline<- sqrt(mean((3.029 - df_out_model_1$test.split.TARGET)^2, na.rm=TRUE))
+paste('Baseline RMSE = ',round(rmse_baseline, digits = 5))
+
+df_out_model_1$PREDICT_BINARY <- ifelse(df_out_model_1$model_1_TEST > 0, 1, 0)
+df_out_model_1$TARGET_BINARY <- ifelse(df_out_model_1$test.split.TARGET > 0, 1, 0)
+
+table(df_out_model_1$TARGET_BINARY, df_out_model_1$PREDICT_BINARY, dnn = c("Actual", "Predict"))
+
+paste('Model 1 Accuracy = ',((2993+6)/(2993+6+803+3)))
+```
+
+'TARGET_BINARY' + 'STARS' + 'STARSNA' + 'LabelAppeal' + 'AcidIndex' + 'VolatileAcidity'
+
+**MODEL 2 - LOGISTIC MODEL**
+```{r - Model 2 - Logistic Model}
+
+model_2 <- glm(TARGET_BINARY~STARSNA + LabelAppeal, data = train.split, family = binomial)
+summary(model_2)
+
+```
+
+**MODEL 3 - LOGISTIC MODEL 2**
+```{r - Model 3 - Logistic Model}
+
+model_3 <- glm(TARGET_BINARY~STARS + LabelAppeal + AcidIndex + VolatileAcidity, data = train.split, family = binomial)
+summary(model_3)
+```
+
+
+##########################################################################################################################################
+4. SELECT MODELS (10 Points)
+Decide on the criteria for selecting the “Best Model”. Will you use a metric such as AIC or Average Squared Error? Will you select a model with slightly worse performance if it makes more sense or is more parsimonious? Discuss why you selected your model.
+If you happen to like the standard regression model the best, then that is OK. Please say that you like it the best and why you like it. HOWEVER, you MUST select a model for grading.
+
+**Confusion Matrix - Model 2**
+The diagonal elements of the confusion matrix indicate correct predictions, while the off-diagonals represent incorrect predictions.
+```{r Evaluate Model 2}
+model_2_probs <- predict(model_2, test.split, type='response')
+
+model_2_outcome <- ifelse(model_2_probs > 0.5,1,0)
+
+table(test.split$TARGET_BINARY, model_2_outcome, dnn = c('Purchase','Predict'))
+
+paste('model 2 accuracy = ',3229/(3229+238+338))
+```
+
+**Confusion Matrix - Model 3**
+The diagonal elements of the confusion matrix indicate correct predictions, while the off-diagonals represent incorrect predictions.
+```{r Evaluate Model 3}
+model_3_probs <- predict(model_3, test.split, type='response')
+
+model_3_outcome <- ifelse(model_3_probs > 0.5,1,0)
+
+table(test.split$TARGET_BINARY, model_3_outcome, dnn = c('Purchase','Predict'))
+
+paste('model 3 accuracy = ',3262/(3262+255+288))
+```
+
+##########################################################################################################################################
+SCORED DATA FILE (50 POINTS)
+
+KAGGLE LINK
+https://www.kaggle.com/c/predict-wine-sales-2020/leaderboard
+
+Score the data file wine_test.csv. Create a file that has only TWO variables for each record:
+
+INDEX
+P_TARGET
+
+Name this file yourname_410_hw04.csv. The first variable, INDEX, will allow me to match my grading key to your predicted value. If I cannot do this, you won’t get a grade. So please include this value. The second value, P_TARGET is 0 for no sales or 1 meaning some number of cases sold.
+
+After running both Model 2 and Model 3 on Kaggle, we see that Model 2 has less variance than Model 3. 
+
+Model 2 RMSE (Kaggle) = 2.90429
+Model 3 RMSE (Kaggle) = 3.06194
+
+```{r - Model 2 - Logistic Model - TRAIN WITH FULL TRAIN SET}
+
+#model 2 worked better than model 3 (model 3 was overfitting)
+model_2_FULLTRAIN <- glm(TARGET_BINARY~STARSNA + LabelAppeal, data = train, family = binomial)
+summary(model_2_FULLTRAIN)
+?predict
+
+model_2_test_probs <- predict(model_2_FULLTRAIN, test, type='response')
+
+model_2_test_outcome <- ifelse(model_2_test_probs > 0.5,1,0)
+
+df_out_model_2 <- data.frame(test$INDEX, model_2_test_outcome)
+
+# Rename column where names is "Sepal.Length"
+names(df_out_model_2)[names(df_out_model_2) == "test.INDEX"] <- "INDEX"
+names(df_out_model_2)[names(df_out_model_2) == "model_2_test_outcome"] <- "P_TARGET"
+
+df_out_model_2
+
+#Finally, the code next will create the csv file for you to upload for this assignment and for Kaggle.
+write.csv(df_out_model_2, 'vincentpun_410_hw04.csv', row.names = FALSE)
+```
+For some reason this didn't work? 
+
+df_out_model_3 %>% 
+  rename(
+    INDEX = test.INDEX,
+    P_TARGET = model_3_test_outcome
+    )
+
+
+##########################################################################################################################################
+##########################################################################################################################################
+##########################################################################################################################################
+##########################################################################################################################################
+##########################################################################################################################################
+
+
+
+**COMPUTATIONAL WINE SALES PROJECT (50 Points)**
+
+For this final assignment you are asked to try to improve on your model for the wine sales data using the Hurdle model. You can also try using Poisson and/or Negative Binomial if you like. Just tell me which models you are trying if you prefer them over the Hurdle model.
+
+DELIVERABLES
+
+A csv file which has the scored records values from test.csv. 
+There will be only TWO columns in this file: INDEX, P_TARGET.
+You will be graded on how your model performs versus my model and those of other students in the class.
+
+SCORED DATA FILE (50 POINTS)
+Score the data file wine_test.csv. Create a file that has only Three variables for each record:
+
+INDEX
+P_TARGET
+P_HOW_MANY
+
+Name this file yourname_410_hw05.csv. 
+
+The first variable, INDEX, will allow me to match my grading key to your predicted value. If I cannot do this, you won’t get a grade. So please include this value. 
+
+The second value, P_TARGET is 0 for no sales or 1 meaning some number of cases sold. 
+
+P_HOW_MANY should be the number of cases predicted to be sold.
+
+**MODEL 4 - HURDLE MODEL**
+```{r Model 4 - Hurdle Model}
+model_4 <- hurdle(TARGET ~ STARSNA + LabelAppeal, data=train, dist = 'poisson', zero.dist = 'binomial', link = 'logit')
+summary(model_4)
+
+```
+
+```{r Hurdle - Whether purchase is made (1) or not (0)}
+
+logit1 <- model_4$coef$zero[[1]] + model_4$coef$zero[[2]] * test$STARS
+
+oddsratio1 <- exp(logit1)
+
+pi1 <- oddsratio1 / (1 + oddsratio1)
+head(pi1, n=5)
+
+outcome1 <- ifelse(pi1 > 0.5,1,0)
+head(outcome1,n=15)
+
+```
+
+```{r Hurdle - Expected value of poisson model mu}
+
+#undo the log, using exponential, gives us the predicted values for the positive counts of purchases
+expectedvalue <- exp(model_4$coef$count[[1]] + model_4$coef$count[[2]] *test$STARS)
+
+head(expectedvalue, n=15)
+
+#If predicted to be 0, then 0, else expectedvalue rounded to nearest whole number 
+P_HOW_MANY <- round(outcome1*expectedvalue,0)
+
+df_out_model_4 <- data.frame(test$INDEX, outcome1, P_HOW_MANY)
+```
+
+```{r Model 4 Hurdle Output - DELIVERABLE}
+# Rename column where names is "Sepal.Length"
+names(df_out_model_4)[names(df_out_model_4) == "test.INDEX"] <- "INDEX"
+names(df_out_model_4)[names(df_out_model_4) == "outcome1"] <- "P_TARGET"
+
+#Browse Output
+head(df_out_model_4, n=15)
+
+#submission model (without P_HOW_MANY)
+df_model_4_kaggle <- df_out_model_4[c("INDEX","P_TARGET")]
+head(df_model_4_kaggle,n=5)
+
+#Finally, the code next will create the csv file for you to upload for this assignment and for Kaggle.
+write.csv(df_out_model_4, 'vincentpun_410_hw05.csv', row.names = FALSE)
+write.csv(df_model_4_kaggle, 'vincentpun_410_hw05_KaggleDeliverable.csv', row.names = FALSE)
+```
+
+KAGGLE
+https://www.kaggle.com/c/predict-wine-sales-2020/leaderboard
